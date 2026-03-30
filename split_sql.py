@@ -22,7 +22,7 @@ def split_mysql_dump(input_file, base_output_dir, strip_definer=True):
     # 3. Use Regex to find CREATE statements
     # Identify the start of every object. This is more reliable than finding the end.
     start_pattern = re.compile(
-        r'CREATE\s+(?:DEFINER=`[^`]+`@`[^`]+`\s+)?(?P<type>TABLE|PROCEDURE|VIEW|TRIGGER)\s+(?:IF NOT EXISTS\s+)?`(?P<name>[^`]+)`',
+        r'CREATE\s+(?:DEFINER=`[^`]+`@`[^`]+`\s+)?(?P<type>TABLE|PROCEDURE|VIEW|TRIGGER)\s+(?:IF NOT EXISTS\s+)?[`"\'\s]?(?P<name>[^`"\'\s\(]+)[`"\'\s]?',
         re.IGNORECASE
     )
     
