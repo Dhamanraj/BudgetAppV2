@@ -73,7 +73,7 @@ BEGIN
     )
     SELECT 
         -- Hash-based ID
-        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(lt.transaction_date, lt.amount, lt.descriptionROW_NUMBER() OVER(ORDER BY lt.transaction_date, lt.amount, lt.description))), 1, 16), 16, 10) AS SIGNED)),
+        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(lt.transaction_date, lt.amount, lt.description,ROW_NUMBER() OVER(ORDER BY lt.transaction_date, lt.amount, lt.description))), 1, 16), 16, 10) AS SIGNED)),
         STR_TO_DATE(lt.transaction_date, "%m/%d/%Y"),
         STR_TO_DATE(lt.POSTED_DATE , "%m/%d/%Y"),
         -- Type Logic based on Statement Description
