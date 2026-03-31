@@ -65,15 +65,15 @@ BEGIN
         MEMBER_ID, ADDED_USER, ADDED_DATETIME    
     )
     SELECT 
-        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(lt.transaction_date, lt.amount, lt.description)), 1, 16), 16, 10) AS SIGNED)),
-        STR_TO_DATE(lt.transaction_date, "%m/%d/%Y"),
+        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(REPLACE(lt.transaction_date, '"', ''), ABS(REPLACE(lt.amount, '"', '')), REPLACE(lt.description, '"', ''))), 1, 16), 16, 10) AS SIGNED)),
+        STR_TO_DATE(REPLACE(lt.transaction_date, '"', ''), "%m/%d/%Y"),
         -- Type Logic: Positive is Credit/Deposit (CDT), Negative is Debit/Withdrawal (DBT)
         CASE 
-            WHEN CAST(lt.amount AS DECIMAL(19,4)) > 0 THEN 'CDT'
+            WHEN CAST(REPLACE(lt.amount, '"', '')  AS DECIMAL(19,4)) > 0 THEN 'CDT'
             ELSE 'DBT' 
         END,
-        ABS(CAST(lt.amount AS DECIMAL(19,4))),
-        UPPER(lt.description),
+        ABS(CAST(REPLACE(lt.amount, '"', '') AS DECIMAL(19,4))),
+        UPPER(REPLACE(lt.description, '"', '')),
         mc.CATG_ID,
         msc.SUB_CATG_ID, 
         varBankId,
@@ -84,10 +84,10 @@ BEGIN
     FROM LND_TRANSACTIONS lt 
     LEFT JOIN MCC_CATEGORY mc 
         ON mc.CATG_NAME = CASE 
-                            WHEN lt.description LIKE '%ATM%' OR lt.description LIKE '%CASH WDL%' THEN 'CASH & ATM'
-                            WHEN lt.description LIKE '%TRANSFER%' OR lt.description LIKE '%XFER%' THEN 'TRANSFERS'
-                            WHEN lt.description LIKE '%SERVICE CHG%' OR lt.description LIKE '%FEE%' THEN 'BANK FEES'
-                            WHEN CAST(lt.amount AS DECIMAL(19,4)) > 0 THEN 'INCOME & DEPOSITS'
+                            WHEN REPLACE(lt.description, '"', '') LIKE '%ATM%' OR lt.description LIKE '%CASH WDL%' THEN 'CASH & ATM'
+                            WHEN REPLACE(lt.description, '"', '') LIKE '%TRANSFER%' OR lt.description LIKE '%XFER%' THEN 'TRANSFERS'
+                            WHEN REPLACE(lt.description, '"', '') LIKE '%SERVICE CHG%' OR lt.description LIKE '%FEE%' THEN 'BANK FEES'
+                            WHEN CAST(REPLACE(lt.amount, '"', '') AS DECIMAL(19,4)) > 0 THEN 'INCOME & DEPOSITS'
                             ELSE 'DEBIT CARD PURCHASE' 
                         END
     LEFT JOIN MCC_SUB_CATEGORY msc 
@@ -96,7 +96,7 @@ BEGIN
                                 WHEN lt.description LIKE '%CASH WDL%' THEN 'TELLER WITHDRAWAL'
                                 WHEN lt.description LIKE '%TRANSFER%' OR lt.description LIKE '%XFER%' THEN 'ACCOUNT TRANSFER'
                                 WHEN lt.description LIKE '%SERVICE CHG%' OR lt.description LIKE '%FEE%' THEN 'MONTHLY SERVICE FEE'
-                                WHEN CAST(lt.amount AS DECIMAL(19,4)) > 0 THEN 'DIRECT DEPOSIT / CREDIT'
+                                WHEN CAST(REPLACE(lt.amount, '"', '') AS DECIMAL(19,4)) > 0 THEN 'DIRECT DEPOSIT / CREDIT'
                                 ELSE 'GENERAL MERCHANDISE'
                             END
        AND msc.CATG_ID = mc.CATG_ID;
