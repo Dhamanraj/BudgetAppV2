@@ -1,5 +1,7 @@
 DELIMITER ;;
 
+DROP PROCEDURE BudgetApp.SP_REFRESH_REPORTING_DATA;
+
 CREATE PROCEDURE BudgetApp.SP_REFRESH_REPORTING_DATA()
     COMMENT 'Master Wrapper for refreshing all bank reporting data'
 BEGIN
@@ -21,5 +23,5 @@ BEGIN
     CALL BudgetApp.SP_PROCESS_CITI_REPORTING();
 
     -- Optional: Cleanup old logs (keep last 30 days)
-    DELETE FROM BudgetApp.ETL_LOG WHERE START_TIME < DATE_SUB(NOW(), INTERVAL 30 DAY);
+   -- DELETE FROM BudgetApp.ETL_LOG WHERE START_TIME < DATE_SUB(NOW(), INTERVAL 30 DAY);
 END ;;
