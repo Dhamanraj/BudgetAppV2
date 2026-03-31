@@ -1,6 +1,6 @@
 DELIMITER ;;
 
-CREATE OR REPLACE PROCEDURE BudgetApp.SP_REFRESH_REPORTING_DATA()
+CREATE PROCEDURE BudgetApp.SP_REFRESH_REPORTING_DATA()
     COMMENT 'Master Wrapper for refreshing all bank reporting data'
 BEGIN
     -- Standard Error Handling for the master wrapper
