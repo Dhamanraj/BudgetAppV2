@@ -20,35 +20,48 @@ BEGIN
     START TRANSACTION;
     
     -- 2. PHASE 1: Auto-Onboard Parent Categories
-    INSERT IGNORE INTO MCC_CATEGORY (CATG_NAME, ADDED_USER, ADDED_DATETIME)
+    INSERT INTO MCC_CATEGORY (CATG_NAME, ADDED_USER, ADDED_DATETIME)
     SELECT DISTINCT 
-        CASE 
-            WHEN lt.credit IS NOT NULL AND (lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
-            WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'
-            ELSE 'CITI EXPENDITURE' 
-        END,
+        src.CATG_NAME,
         'SYSTEM_AUTO',
         NOW()
-    FROM LND_TRANSACTIONS lt;
+    FROM (
+        SELECT DISTINCT 
+            CASE 
+                WHEN lt.credit IS NOT NULL AND (lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
+                WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'
+                ELSE 'CITI EXPENDITURE' 
+            END AS CATG_NAME
+        FROM LND_TRANSACTIONS lt
+    ) src
+    WHERE NOT EXISTS (SELECT 1 FROM MCC_CATEGORY mc WHERE mc.CATG_NAME = src.CATG_NAME);
 
     -- 3. PHASE 2: Auto-Onboard Sub-Categories
-    INSERT IGNORE INTO MCC_SUB_CATEGORY (SUB_CATG_NAME, CATG_ID, ADDED_USER, ADDED_DATETIME)
+    INSERT INTO MCC_SUB_CATEGORY (SUB_CATG_NAME, CATG_ID, ADDED_USER, ADDED_DATETIME)
     SELECT DISTINCT 
-        CASE 
-            WHEN lt.credit IS NOT NULL AND (lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
-            WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'
-            ELSE UPPER(TRIM(COALESCE(lt.category, 'UNCATEGORIZED'))) 
-        END,
+        src.SUB_CATG_NAME,
         mc.CATG_ID, 
         'SYSTEM_AUTO', 
         NOW()
-    FROM LND_TRANSACTIONS lt
-    JOIN MCC_CATEGORY mc 
-        ON mc.CATG_NAME = CASE 
-                            WHEN lt.credit IS NOT NULL AND ( lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
-                            WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'
-                            ELSE 'CITI EXPENDITURE' 
-                        END;
+    FROM (
+        SELECT DISTINCT 
+            CASE 
+                WHEN lt.credit IS NOT NULL AND (lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
+                WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'
+                ELSE UPPER(TRIM(COALESCE(lt.category, 'UNCATEGORIZED'))) 
+            END AS SUB_CATG_NAME,
+            CASE 
+                WHEN lt.credit IS NOT NULL AND ( lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
+                WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'
+                ELSE 'CITI EXPENDITURE' 
+            END AS PARENT_CATG_NAME
+        FROM LND_TRANSACTIONS lt
+    ) src
+    JOIN (SELECT CATG_NAME, MIN(CATG_ID) AS CATG_ID FROM MCC_CATEGORY GROUP BY CATG_NAME) mc 
+        ON mc.CATG_NAME = src.PARENT_CATG_NAME
+    WHERE NOT EXISTS (
+        SELECT 1 FROM MCC_SUB_CATEGORY msc WHERE msc.SUB_CATG_NAME = src.SUB_CATG_NAME AND msc.CATG_ID = mc.CATG_ID
+    );
     
     -- 4. PHASE 3: Load Final Transactions
     INSERT IGNORE INTO TRANSACTIONS 
@@ -81,13 +94,13 @@ BEGIN
         'DKAKKE',
         CURRENT_TIMESTAMP()
     FROM LND_TRANSACTIONS lt 
-    LEFT JOIN MCC_CATEGORY mc 
+    LEFT JOIN (SELECT CATG_NAME, MIN(CATG_ID) AS CATG_ID FROM MCC_CATEGORY GROUP BY CATG_NAME) mc 
         ON mc.CATG_NAME = CASE 
                             WHEN lt.credit IS NOT NULL AND ( lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
                             WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'
                             ELSE 'CITI EXPENDITURE' 
                         END
-    LEFT JOIN MCC_SUB_CATEGORY msc 
+    LEFT JOIN (SELECT SUB_CATG_NAME, CATG_ID, MIN(SUB_CATG_ID) AS SUB_CATG_ID FROM MCC_SUB_CATEGORY GROUP BY SUB_CATG_NAME, CATG_ID) msc 
         ON msc.SUB_CATG_NAME = CASE 
                                 WHEN lt.credit IS NOT NULL AND (lt.description LIKE '%PAYMENT%') THEN 'CREDIT CARD PAYMENT'
                                 WHEN lt.credit IS NOT NULL AND lt.description NOT LIKE '%PAYMENT%' THEN 'MERCHANT REFUND'

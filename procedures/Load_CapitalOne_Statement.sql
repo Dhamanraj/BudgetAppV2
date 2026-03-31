@@ -20,36 +20,49 @@ BEGIN
     START TRANSACTION;
     
     -- 2. PHASE 1: Auto-Onboard Parent Categories
-    INSERT IGNORE INTO MCC_CATEGORY (CATG_NAME, ADDED_USER, ADDED_DATETIME)
+    INSERT INTO MCC_CATEGORY (CATG_NAME, ADDED_USER, ADDED_DATETIME)
     SELECT DISTINCT 
-        CASE 
-            WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
-            WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
-            ELSE 'CAPITAL ONE EXPENDITURE' 
-        END,
+        src.CATG_NAME,
         'SYSTEM_AUTO',
         NOW()
-    FROM LND_TRANSACTIONS lt;
+    FROM (
+        SELECT DISTINCT 
+            CASE 
+                WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
+                WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
+                ELSE 'CAPITAL ONE EXPENDITURE' 
+            END AS CATG_NAME
+        FROM LND_TRANSACTIONS lt
+    ) src
+    WHERE NOT EXISTS (SELECT 1 FROM MCC_CATEGORY mc WHERE mc.CATG_NAME = src.CATG_NAME);
 
     -- 3. PHASE 2: Auto-Onboard Sub-Categories
-    INSERT IGNORE INTO MCC_SUB_CATEGORY (SUB_CATG_NAME, CATG_ID, ADDED_USER, ADDED_DATETIME)
+    INSERT INTO MCC_SUB_CATEGORY (SUB_CATG_NAME, CATG_ID, ADDED_USER, ADDED_DATETIME)
     SELECT DISTINCT 
-        CASE 
-            WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
-            WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
-            ELSE UPPER(TRIM(lt.category)) 
-        END,
+        src.SUB_CATG_NAME,
         mc.CATG_ID, 
         'SYSTEM_AUTO', 
         NOW()
-    FROM LND_TRANSACTIONS lt
-    JOIN MCC_CATEGORY mc 
-        ON mc.CATG_NAME = CASE 
-                            WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
-                            WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
-                            ELSE 'CAPITAL ONE EXPENDITURE' 
-                        END
-    WHERE lt.category IS NOT NULL OR lt.description LIKE '%PYMT%';
+    FROM (
+        SELECT DISTINCT 
+            CASE 
+                WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
+                WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
+                ELSE UPPER(TRIM(lt.category)) 
+            END AS SUB_CATG_NAME,
+            CASE 
+                WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
+                WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
+                ELSE 'CAPITAL ONE EXPENDITURE' 
+            END AS PARENT_CATG_NAME
+        FROM LND_TRANSACTIONS lt
+        WHERE lt.category IS NOT NULL OR lt.description LIKE '%PYMT%'
+    ) src
+    JOIN (SELECT CATG_NAME, MIN(CATG_ID) AS CATG_ID FROM MCC_CATEGORY GROUP BY CATG_NAME) mc 
+        ON mc.CATG_NAME = src.PARENT_CATG_NAME
+    WHERE NOT EXISTS (
+        SELECT 1 FROM MCC_SUB_CATEGORY msc WHERE msc.SUB_CATG_NAME = src.SUB_CATG_NAME AND msc.CATG_ID = mc.CATG_ID
+    );
     
     -- 4. PHASE 3: Load Final Transactions (Updated Date Formats)
     INSERT IGNORE INTO TRANSACTIONS 
@@ -82,13 +95,13 @@ BEGIN
         'DKAKKE',
         CURRENT_TIMESTAMP()
     FROM LND_TRANSACTIONS lt 
-    LEFT JOIN MCC_CATEGORY mc 
+    LEFT JOIN (SELECT CATG_NAME, MIN(CATG_ID) AS CATG_ID FROM MCC_CATEGORY GROUP BY CATG_NAME) mc 
         ON mc.CATG_NAME = CASE 
                             WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
                             WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
                             ELSE 'CAPITAL ONE EXPENDITURE' 
                         END
-    LEFT JOIN MCC_SUB_CATEGORY msc 
+    LEFT JOIN (SELECT SUB_CATG_NAME, CATG_ID, MIN(SUB_CATG_ID) AS SUB_CATG_ID FROM MCC_SUB_CATEGORY GROUP BY SUB_CATG_NAME, CATG_ID) msc 
         ON msc.SUB_CATG_NAME = CASE 
                                 WHEN lt.description LIKE '%PYMT%' THEN 'CREDIT CARD PAYMENT'
                                 WHEN (lt.debit IS NULL OR lt.debit = '') AND (lt.credit IS NOT NULL AND lt.credit <> '') THEN 'MERCHANT REFUND'
