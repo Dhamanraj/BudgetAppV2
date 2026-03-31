@@ -72,7 +72,7 @@ BEGIN
     )
     SELECT 
         -- Hash ID based on Date + Debit + Credit + Description
-        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(lt.transaction_date, IFNULL(lt.debit,'0'), IFNULL(lt.credit,'0'), lt.description)), 1, 16), 16, 10) AS SIGNED)),
+        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(lt.transaction_date, IFNULL(lt.debit,'0'), IFNULL(lt.credit,'0'), lt.description,ROW_NUMBER() OVER(ORDER BY lt.transaction_date, IFNULL(lt.debit,'0'), IFNULL(lt.credit,'0'), lt.description))), 1, 16), 16, 10) AS SIGNED)),
         -- Date format mm/dd/yyyy
         STR_TO_DATE(lt.transaction_date, "%m/%d/%Y"),
         -- Type Logic: If credit is populated, it's a Credit (CDT), else Debit (DBT)

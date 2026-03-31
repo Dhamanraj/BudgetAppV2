@@ -72,7 +72,7 @@ BEGIN
         MEMBER_ID, ADDED_USER, ADDED_DATETIME    
     )
     SELECT 
-        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(lt.transaction_date, IFNULL(lt.debit,''), IFNULL(lt.credit,''), lt.description)), 1, 16), 16, 10) AS SIGNED)),
+        ABS(CAST(CONV(SUBSTRING(MD5(CONCAT(lt.transaction_date, IFNULL(lt.debit,''), IFNULL(lt.credit,''), lt.description,ROW_NUMBER() OVER(ORDER BY lt.transaction_date, IFNULL(lt.debit,''), IFNULL(lt.credit,''), lt.description))), 1, 16), 16, 10) AS SIGNED)),
         -- Updated to yyyy-mm-dd format
         STR_TO_DATE(lt.transaction_date, "%Y-%m-%d"),
         STR_TO_DATE(lt.posted_date, "%Y-%m-%d"),
