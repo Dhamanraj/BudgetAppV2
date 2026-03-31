@@ -109,7 +109,7 @@ BEGIN
         CASE WHEN CAST(lt.amount AS DECIMAL(30,2)) >= 0 THEN 'DBT' ELSE 'CDT' END,
         ABS(CAST(lt.amount AS DECIMAL(19,4))),
         UPPER(lt.description),
-        NULL, 
+        UPPER(lt.category), 
         NULL, 
         NULL, 
         NULL, 
