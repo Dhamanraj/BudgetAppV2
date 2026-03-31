@@ -1,13 +1,29 @@
-CREATE  PROCEDURE `Load_Amex_Statement`(
+CREATE PROCEDURE BudgetApp.`SP_RAW_LOAD_AMEX_TRANSACTIONS`(
     IN inUserName VARCHAR(50),
     IN inBankName VARCHAR(50),
     IN inCARD_LAST_4 VARCHAR(4)
 )
 BEGIN
-	
     DECLARE varMemberId INT;
     DECLARE varBankId INT;
     DECLARE varCardId INT;
+    DECLARE varLogId INT;
+    DECLARE varRowCount INT DEFAULT 0;
+
+    -- Error Handling
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION 
+    BEGIN
+        GET DIAGNOSTICS CONDITION 1 @p1 = RETURNED_SQLSTATE, @p2 = MESSAGE_TEXT;
+        ROLLBACK;
+        IF varLogId IS NOT NULL THEN
+            UPDATE BudgetApp.ETL_LOG 
+            SET STATUS = 'FAILED', ERROR_MSG = @p2, END_TIME = NOW() 
+            WHERE LOG_ID = varLogId;
+        END IF;
+        RESIGNAL;
+    END;
+
+    START TRANSACTION;
 
     -- PHASE 0: VALIDATION (Must filter for IS_CURRENT = 1)
     -- We select the ID of the ACTIVE version of these entities
@@ -31,8 +47,11 @@ BEGIN
         SIGNAL SQLSTATE '45000' 
         SET MESSAGE_TEXT = 'VALIDATION FAILED: NO ACTIVE (IS_CURRENT=1) MEMBER, BANK, OR CARD FOUND.';
     END IF;
-	
-    START TRANSACTION;
+
+    -- Initialize Audit Log
+    INSERT INTO BudgetApp.ETL_LOG (PROC_NAME, BANK_ID, STATUS) 
+    VALUES ('SP_RAW_LOAD_AMEX_TRANSACTIONS', varBankId, 'STARTED');
+    SET varLogId = LAST_INSERT_ID();
     
     -- PHASE 1: Auto-Onboard Categories
     INSERT INTO MCC_CATEGORY (CATG_NAME, ADDED_USER, ADDED_DATETIME)
@@ -125,6 +144,12 @@ BEGIN
        AND msc.CATG_ID = mc.CATG_ID
     WHERE lt.REFERENCE IS NOT NULL;
         
+    SET varRowCount = ROW_COUNT();
+
     COMMIT;
     
+    -- Finalize Log
+    UPDATE BudgetApp.ETL_LOG 
+    SET STATUS = 'SUCCESS', ROWS_PROCESSED = varRowCount, END_TIME = NOW() 
+    WHERE LOG_ID = varLogId;
 END ;;

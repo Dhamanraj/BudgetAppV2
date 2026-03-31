@@ -1,0 +1,62 @@
+DELIMITER ;;
+
+CREATE OR REPLACE PROCEDURE BudgetApp.SP_PROCESS_APPLE_REPORTING()
+BEGIN
+    DECLARE varBankId INT;
+    DECLARE varLogId INT;
+    DECLARE varRowCount INT DEFAULT 0;
+
+    SELECT BANK_ID INTO varBankId FROM BudgetApp.BANKS WHERE BANK_NAME LIKE '%Apple%' AND IS_CURRENT = 1 LIMIT 1;
+    INSERT INTO BudgetApp.ETL_LOG (PROC_NAME, BANK_ID, STATUS) VALUES ('SP_PROCESS_APPLE_REPORTING', varBankId, 'STARTED');
+    SET varLogId = LAST_INSERT_ID();
+
+    BEGIN
+        DECLARE EXIT HANDLER FOR SQLEXCEPTION 
+        BEGIN
+            GET DIAGNOSTICS CONDITION 1 @p1 = RETURNED_SQLSTATE, @p2 = MESSAGE_TEXT;
+            ROLLBACK;
+            UPDATE BudgetApp.ETL_LOG SET STATUS = 'FAILED', ERROR_MSG = @p2, END_TIME = NOW() WHERE LOG_ID = varLogId;
+        END;
+
+        IF varBankId IS NULL THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Apple Bank ID not found.';
+        END IF;
+
+        START TRANSACTION;
+
+        REPLACE INTO BudgetApp.TRANSACTION_REPORTING 
+        (TRANSACTION_ID, BANK_ID, MEMBER_ID, TRANSACTION_DATE, TRANSACTION_AMOUNT, TRANSACTION_TYPE, 
+         PAYMENT_CHANNEL, ENTITY_NAME, GEOGRAPHY, DETAILED_CATEGORY, INSTALLMENT_PLAN)
+        SELECT 
+            t.transaction_id, t.bank_id, t.member_id, t.transaction_date, t.transaction_amount, t.transaction_type,
+            CASE 
+                WHEN t.DESCRIPTION LIKE 'ACH DEPOSIT%' THEN 'PAYMENT'
+                WHEN t.DESCRIPTION LIKE 'MONTHLY INSTALLMENTS%' THEN 'INSTALLMENT'
+                WHEN t.DESCRIPTION LIKE 'DAILY CASH ADJUSTMENT%' THEN 'REWARDS'
+                WHEN t.DESCRIPTION LIKE '%(RETURN)%' THEN 'RETURN'
+                WHEN t.DESCRIPTION LIKE 'APPLE.COM/BILL%' THEN 'DIGITAL SERVICES'
+                ELSE 'CREDIT CARD'
+            END,
+            TRIM(REGEXP_REPLACE(
+                REPLACE(REPLACE(REPLACE(REPLACE(t.DESCRIPTION, 'TST* ', ''), 'GFM*', ''), 'ABC*P ', ''), 'SP AG1 ', ''),
+                '([ ]+(#|[0-9]{1,}[A-Z]|[0-9]{2,}|AND |LIMITED|PKWY|STREET|WAY|RD|DR|SUITE|BLVD|ONE APPLE PARK|GOFUNDME.COM|\\().*)', ''
+            )),
+            TRIM(CASE 
+                WHEN t.DESCRIPTION REGEXP '[A-Z. ]+ [0-9]{5} [A-Z]{2} USA' THEN
+                    REGEXP_REPLACE(REGEXP_SUBSTR(t.DESCRIPTION, '[A-Z. ]+ [0-9]{5} [A-Z]{2} USA'), '[0-9]{5} | USA', '')
+                WHEN t.DESCRIPTION LIKE 'APPLE.COM/BILL%' THEN 'CUPERTINO CA'
+                ELSE 'ONLINE'
+            END),
+            UPPER(TRIM(msc.SUB_CATG_NAME)),
+            CASE WHEN t.DESCRIPTION LIKE 'MONTHLY INSTALLMENTS%' THEN REGEXP_SUBSTR(t.DESCRIPTION, '[0-9]+ OF [0-9]+') ELSE NULL END
+        FROM BudgetApp.TRANSACTIONS t
+        LEFT JOIN BudgetApp.MCC_SUB_CATEGORY msc ON t.SUB_CATG_ID = msc.SUB_CATG_ID
+        WHERE t.BANK_ID = varBankId;
+
+        SET varRowCount = ROW_COUNT();
+        COMMIT;
+
+        UPDATE BudgetApp.ETL_LOG SET STATUS = 'SUCCESS', ROWS_PROCESSED = varRowCount, END_TIME = NOW() WHERE LOG_ID = varLogId;
+    END;
+END ;;
+DELIMITER ;

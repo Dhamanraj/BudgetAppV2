@@ -1,0 +1,70 @@
+DELIMITER ;;
+
+CREATE OR REPLACE PROCEDURE BudgetApp.SP_PROCESS_WELLSFARGO_REPORTING()
+BEGIN
+    DECLARE varBankId INT;
+    DECLARE varLogId INT;
+    DECLARE varRowCount INT DEFAULT 0;
+
+    -- Initialize Log
+    SELECT BANK_ID INTO varBankId FROM BudgetApp.BANKS WHERE BANK_NAME LIKE '%Wells%' LIMIT 1;
+    INSERT INTO BudgetApp.ETL_LOG (PROC_NAME, BANK_ID, STATUS) VALUES ('SP_PROCESS_WELLSFARGO_REPORTING', varBankId, 'STARTED');
+    SET varLogId = LAST_INSERT_ID();
+
+    -- Error Handling
+    BEGIN
+        DECLARE EXIT HANDLER FOR SQLEXCEPTION 
+        BEGIN
+            GET DIAGNOSTICS CONDITION 1 @p1 = RETURNED_SQLSTATE, @p2 = MESSAGE_TEXT;
+            ROLLBACK;
+            UPDATE BudgetApp.ETL_LOG SET STATUS = 'FAILED', ERROR_MSG = @p2, END_TIME = NOW() WHERE LOG_ID = varLogId;
+        END;
+
+        IF varBankId IS NULL THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Wells Fargo Bank ID not found in BANKS table.';
+        END IF;
+
+        START TRANSACTION;
+
+        REPLACE INTO BudgetApp.TRANSACTION_REPORTING 
+        (TRANSACTION_ID, BANK_ID, MEMBER_ID, TRANSACTION_DATE, TRANSACTION_AMOUNT, TRANSACTION_TYPE, 
+         PAYMENT_CHANNEL, ENTITY_NAME, GEOGRAPHY, TRANSACTION_MEMO, TRACE_ID, ASSOCIATED_BANK)
+        SELECT 
+            transaction_id, bank_id, member_id, transaction_date, transaction_amount, transaction_type,
+            CASE 
+                WHEN DESCRIPTION LIKE 'PURCHASE AUTHORIZED%' THEN 'DEBIT CARD'
+                WHEN DESCRIPTION LIKE 'ZELLE%' THEN 'ZELLE'
+                WHEN DESCRIPTION LIKE 'ATM CASH%' THEN 'CASH'
+                ELSE 'ACH/TRANSFER'
+            END,
+            TRIM(CASE 
+                WHEN DESCRIPTION LIKE 'ZELLE FROM %' THEN SUBSTRING_INDEX(SUBSTRING_INDEX(DESCRIPTION, ' FROM ', -1), ' ON ', 1)
+                WHEN DESCRIPTION LIKE 'ZELLE TO %' THEN SUBSTRING_INDEX(SUBSTRING_INDEX(DESCRIPTION, ' TO ', -1), ' ON ', 1)
+                WHEN DESCRIPTION LIKE 'PURCHASE AUTHORIZED%' THEN SUBSTRING_INDEX(TRIM(SUBSTRING(DESCRIPTION, 26)), ' ', 1)
+                ELSE SUBSTRING_INDEX(DESCRIPTION, ' ', 2)
+            END),
+            CASE WHEN DESCRIPTION LIKE '% MCKINNEY %' THEN 'MCKINNEY TX' ELSE 'ONLINE' END,
+            CASE 
+                WHEN DESCRIPTION LIKE 'ZELLE % REF # %' THEN 
+                     CASE 
+                        WHEN SUBSTRING_INDEX(DESCRIPTION, ' REF # ', -1) LIKE '% %' THEN 
+                            SUBSTRING(SUBSTRING_INDEX(DESCRIPTION, ' REF # ', -1), LOCATE(' ', SUBSTRING_INDEX(DESCRIPTION, ' REF # ', -1)) + 1)
+                        ELSE NULL 
+                     END
+                ELSE NULL 
+            END,
+            SUBSTRING_INDEX(SUBSTRING_INDEX(DESCRIPTION, ' REF # ', -1), ' ', 1),
+            CASE WHEN DESCRIPTION LIKE '%JPM%' THEN 'CHASE' WHEN DESCRIPTION LIKE '%BAC%' THEN 'BOFA' ELSE NULL END
+        FROM BudgetApp.TRANSACTIONS 
+        WHERE BANK_ID = varBankId;
+
+        SET varRowCount = ROW_COUNT();
+        
+        COMMIT;
+
+        -- Finalize Log
+        UPDATE BudgetApp.ETL_LOG SET STATUS = 'SUCCESS', ROWS_PROCESSED = varRowCount, END_TIME = NOW() WHERE LOG_ID = varLogId;
+    END;
+END ;;
+
+DELIMITER ;

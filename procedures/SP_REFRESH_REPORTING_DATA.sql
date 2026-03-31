@@ -1,0 +1,25 @@
+DELIMITER ;;
+
+CREATE OR REPLACE PROCEDURE BudgetApp.SP_REFRESH_REPORTING_DATA()
+    COMMENT 'Master Wrapper for refreshing all bank reporting data'
+BEGIN
+    -- Standard Error Handling for the master wrapper
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION 
+    BEGIN
+        GET DIAGNOSTICS CONDITION 1 @p1 = RETURNED_SQLSTATE, @p2 = MESSAGE_TEXT;
+        INSERT INTO BudgetApp.ETL_LOG (PROC_NAME, STATUS, ERROR_MSG) 
+        VALUES ('SP_REFRESH_REPORTING_DATA', 'FAILED', CONCAT('Master Failure: ', @p2));
+    END;
+
+    -- Execute child procedures
+    CALL BudgetApp.SP_PROCESS_AXIS_REPORTING();
+    CALL BudgetApp.SP_PROCESS_WELLSFARGO_REPORTING();
+    CALL BudgetApp.SP_PROCESS_AMEX_REPORTING();
+    CALL BudgetApp.SP_PROCESS_DISCOVER_REPORTING();
+    CALL BudgetApp.SP_PROCESS_CAPITALONE_REPORTING();
+    CALL BudgetApp.SP_PROCESS_APPLE_REPORTING();
+    CALL BudgetApp.SP_PROCESS_CITI_REPORTING();
+
+    -- Optional: Cleanup old logs (keep last 30 days)
+    DELETE FROM BudgetApp.ETL_LOG WHERE START_TIME < DATE_SUB(NOW(), INTERVAL 30 DAY);
+END ;;
