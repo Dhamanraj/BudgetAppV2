@@ -8,7 +8,8 @@ BEGIN
     DECLARE varLogId INT;
     DECLARE varRowCount INT DEFAULT 0;
 
-    SELECT BANK_ID INTO varBankId FROM BudgetApp.BANKS WHERE BANK_NAME = 'American Express' AND IS_CURRENT = 1 LIMIT 1;
+    -- Standardize to use LIKE to handle 'AMEX' vs 'American Express'
+    SELECT BANK_ID INTO varBankId FROM BudgetApp.BANKS WHERE (BANK_NAME LIKE '%Amex%' OR BANK_NAME LIKE '%American Express%') AND IS_CURRENT = 1 LIMIT 1;
     INSERT INTO BudgetApp.ETL_LOG (PROC_NAME, BANK_ID, STATUS) VALUES ('SP_PROCESS_AMEX_REPORTING', varBankId, 'STARTED');
     SET varLogId = LAST_INSERT_ID();
 
@@ -21,7 +22,7 @@ BEGIN
         END;
 
         IF varBankId IS NULL THEN
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'American Express Bank ID not found.';
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'SP_PROCESS_AMEX_REPORTING: Bank ID not found. Check if name exists in BANKS table.';
         END IF;
 
         START TRANSACTION;

@@ -8,7 +8,8 @@ BEGIN
     DECLARE varLogId INT;
     DECLARE varRowCount INT DEFAULT 0;
 
-    SELECT BANK_ID INTO varBankId FROM BudgetApp.BANKS WHERE BANK_NAME LIKE '%Capital One%' AND IS_CURRENT = 1 LIMIT 1;
+    -- Standardize to handle 'CapitalOne' vs 'Capital One'
+    SELECT BANK_ID INTO varBankId FROM BudgetApp.BANKS WHERE BANK_NAME LIKE '%CapitalOne%' AND IS_CURRENT = 1 LIMIT 1;
     INSERT INTO BudgetApp.ETL_LOG (PROC_NAME, BANK_ID, STATUS) VALUES ('SP_PROCESS_CAPITALONE_REPORTING', varBankId, 'STARTED');
     SET varLogId = LAST_INSERT_ID();
 
