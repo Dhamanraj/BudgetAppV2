@@ -1,5 +1,7 @@
 DELIMITER ;;
 
+DROP PROCEDURE IF EXISTS BudgetApp.SP_PROCESS_DISCOVER_REPORTING ;;
+
 CREATE PROCEDURE BudgetApp.SP_PROCESS_DISCOVER_REPORTING()
 BEGIN
     DECLARE varBankId INT;
@@ -25,10 +27,10 @@ BEGIN
         START TRANSACTION;
 
         REPLACE INTO BudgetApp.TRANSACTION_REPORTING 
-        (TRANSACTION_ID, BANK_ID, MEMBER_ID, TRANSACTION_DATE, TRANSACTION_AMOUNT, TRANSACTION_TYPE, 
-         PAYMENT_CHANNEL, ENTITY_NAME, GEOGRAPHY, DETAILED_CATEGORY, TRACE_ID)
+        (TRANSACTION_ID, BANK_ID, CARD_ID, MEMBER_ID, TRANSACTION_DATE, POSTED_DATE, TRANSACTION_AMOUNT, TRANSACTION_TYPE, 
+         PAYMENT_CHANNEL, ENTITY_NAME, GEOGRAPHY, CATG_NAME, SUB_CATG_NAME, DETAILED_CATEGORY, TRACE_ID)
         SELECT 
-            transaction_id, bank_id, member_id, transaction_date, transaction_amount, transaction_type,
+            t.transaction_id, t.bank_id, t.card_id, t.member_id, t.transaction_date, t.posted_date, t.transaction_amount, t.transaction_type,
             CASE 
                 WHEN DESCRIPTION LIKE 'INTERNET PAYMENT%' OR EXT_DESCRIPTION = 'PAYMENTS AND CREDITS' THEN 'PAYMENT'
                 WHEN DESCRIPTION LIKE 'AMAZON%' OR DESCRIPTION LIKE 'AMZN%' THEN 'ONLINE PURCHASE'
@@ -45,10 +47,14 @@ BEGIN
                     TRIM(REGEXP_SUBSTR(DESCRIPTION, '([A-Z.]{2,}( [A-Z.]{2,})? [A-Z]{2}([0-9]+)?$)'))
                 ELSE 'UNKNOWN'
             END,
+            mc.CATG_NAME,
+            msc.SUB_CATG_NAME,
             UPPER(TRIM(EXT_DESCRIPTION)),
             REGEXP_SUBSTR(DESCRIPTION, '[0-9]{10,}')
-        FROM BudgetApp.TRANSACTIONS 
-        WHERE BANK_ID = varBankId;
+        FROM BudgetApp.TRANSACTIONS t
+        LEFT JOIN BudgetApp.MCC_CATEGORY mc ON t.CATG_ID = mc.CATG_ID
+        LEFT JOIN BudgetApp.MCC_SUB_CATEGORY msc ON t.SUB_CATG_ID = msc.SUB_CATG_ID AND t.CATG_ID = msc.CATG_ID
+        WHERE t.BANK_ID = varBankId;
 
         SET varRowCount = ROW_COUNT();
         COMMIT;

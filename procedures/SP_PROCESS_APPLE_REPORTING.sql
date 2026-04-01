@@ -1,5 +1,7 @@
 DELIMITER ;;
 
+DROP PROCEDURE IF EXISTS BudgetApp.SP_PROCESS_APPLE_REPORTING ;;
+
 CREATE PROCEDURE BudgetApp.SP_PROCESS_APPLE_REPORTING()
 BEGIN
     DECLARE varBankId INT;
@@ -25,10 +27,10 @@ BEGIN
         START TRANSACTION;
 
         REPLACE INTO BudgetApp.TRANSACTION_REPORTING 
-        (TRANSACTION_ID, BANK_ID, MEMBER_ID, TRANSACTION_DATE, TRANSACTION_AMOUNT, TRANSACTION_TYPE, 
-         PAYMENT_CHANNEL, ENTITY_NAME, GEOGRAPHY, DETAILED_CATEGORY, INSTALLMENT_PLAN)
+        (TRANSACTION_ID, BANK_ID, CARD_ID, MEMBER_ID, TRANSACTION_DATE, POSTED_DATE, TRANSACTION_AMOUNT, TRANSACTION_TYPE, 
+         PAYMENT_CHANNEL, ENTITY_NAME, GEOGRAPHY, CATG_NAME, SUB_CATG_NAME, DETAILED_CATEGORY, INSTALLMENT_PLAN)
         SELECT 
-            t.transaction_id, t.bank_id, t.member_id, t.transaction_date, t.transaction_amount, t.transaction_type,
+            t.transaction_id, t.bank_id, t.card_id, t.member_id, t.transaction_date, t.posted_date, t.transaction_amount, t.transaction_type,
             CASE 
                 WHEN t.DESCRIPTION LIKE 'ACH DEPOSIT%' THEN 'PAYMENT'
                 WHEN t.DESCRIPTION LIKE 'MONTHLY INSTALLMENTS%' THEN 'INSTALLMENT'
@@ -47,10 +49,13 @@ BEGIN
                 WHEN t.DESCRIPTION LIKE 'APPLE.COM/BILL%' THEN 'CUPERTINO CA'
                 ELSE 'ONLINE'
             END),
+            mc.CATG_NAME,
+            msc.SUB_CATG_NAME,
             UPPER(TRIM(msc.SUB_CATG_NAME)),
             CASE WHEN t.DESCRIPTION LIKE 'MONTHLY INSTALLMENTS%' THEN REGEXP_SUBSTR(t.DESCRIPTION, '[0-9]+ OF [0-9]+') ELSE NULL END
         FROM BudgetApp.TRANSACTIONS t
-        LEFT JOIN BudgetApp.MCC_SUB_CATEGORY msc ON t.SUB_CATG_ID = msc.SUB_CATG_ID
+        LEFT JOIN BudgetApp.MCC_CATEGORY mc ON t.CATG_ID = mc.CATG_ID
+        LEFT JOIN BudgetApp.MCC_SUB_CATEGORY msc ON t.SUB_CATG_ID = msc.SUB_CATG_ID AND t.CATG_ID = msc.CATG_ID
         WHERE t.BANK_ID = varBankId;
 
         SET varRowCount = ROW_COUNT();

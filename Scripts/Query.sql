@@ -128,6 +128,7 @@ CREATE TABLE `TRANSACTIONS` (
   -- BIGINT is correct for those long Amex IDs
   `TRANSACTION_ID` bigint NOT NULL,
   `TRANSACTION_DATE` datetime NOT NULL,
+  `POSTED_DATE` datetime DEFAULT NULL,
   
   -- FIXED: Changed from varchar(3) to varchar(10). 
   -- 'DEBIT' (5) and 'CREDIT' (6) were causing your Truncation Error [1406].
@@ -340,4 +341,3 @@ CREATE TABLE `MCC_CATEGORY` (
   PRIMARY KEY (`CATG_ID`),
   FOREIGN KEY (BANK_ID) REFERENCES BANKS(BANK_ID)
 ) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
