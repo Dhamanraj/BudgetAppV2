@@ -1,2 +1,2 @@
-# BudgetAppV2
-This repo is for my budgeting app 
+# Buddy - AI Analyst
+This repo is for my personal finance assistance app 
